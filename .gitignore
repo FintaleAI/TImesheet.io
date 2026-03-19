@@ -14,6 +14,8 @@ venv/
 # Environment files
 .env
 .env.*
+!.env.example
+!*.env.example
 
 # Local databases and machine-specific data
 *.db
@@ -25,3 +27,7 @@ venv/
 Thumbs.db
 .idea/
 .vscode/
+node_modules/
+.next/
+dist/
+build/

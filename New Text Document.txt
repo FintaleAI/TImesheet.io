@@ -1,0 +1,4 @@
+To Run this app here is the command :
+
+.\venv\Scripts\activate
+python -m streamlit run fintale_timesheet_app.py

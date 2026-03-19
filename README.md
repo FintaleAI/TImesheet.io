@@ -1,6 +1,42 @@
 # Fintale Timesheet
 
-This project is a simple role-based timesheet tool built for local use. Right now it runs as a Streamlit app with a SQLite database file stored in the same project folder.
+This project started as a simple local role-based timesheet tool. The confirmed direction now is to turn it into a proper live internal company web app with a stronger architecture that is scalable, secure, and easier to improve over time.
+
+## Confirmed Target Direction
+
+These decisions are now locked in for the next version:
+
+- Database: Neon PostgreSQL
+- Config management: environment-based config is mandatory
+- Authentication: strong production-grade authentication is mandatory
+- Product direction: choose Option B, meaning a proper web app architecture instead of staying on Streamlit
+
+## Confirmed Authentication Roadmap
+
+The authentication plan is now:
+
+- Phase 1: keep login with admin-created `username + password`
+- Phase 2: add company domain-based email login for each employee
+- Phase 3: optionally move fully to SSO later if the company wants it
+
+This means the new system should not be built around usernames only. It should be built around a flexible user identity model that supports both username login now and company email-based login later.
+
+## Recommended Final Stack
+
+- Frontend: Next.js
+- Backend API: FastAPI
+- Database: Neon PostgreSQL
+- ORM and migrations: SQLAlchemy + Alembic
+- Auth: username/password now, designed to support company email login and later SSO, plus RBAC
+- Deployment: Render for app hosting
+- Access protection: Cloudflare Access in front of the app for employee-only access
+
+This is the best balance of:
+
+- long-term maintainability
+- secure internal access
+- easier feature growth
+- clean separation between frontend, backend, auth, and database
 
 ## Current Tech Stack
 
@@ -47,17 +83,15 @@ Main reasons:
 
 To make this usable as a live web app for all employees, these are the main changes required.
 
-### 1. Move from SQLite to a server database
-
-Recommended:
-
-- PostgreSQL
+### 1. Move from SQLite to Neon PostgreSQL
 
 Why:
 
 - Better for multiple users
 - Safer for concurrent writes
 - Easier backups and hosting
+- Better long-term fit for a live company system
+- Neon gives managed Postgres with modern developer workflows
 
 ### 2. Store config in environment variables
 
@@ -68,126 +102,225 @@ Move things like these out of hardcoded app code:
 - app secrets
 - deployment settings
 
-Recommended file for local development:
+Recommended for local development:
 
 - `.env`
+
+Recommended for production:
+
+- platform-managed environment variables
+- no secrets hardcoded in source code
 
 ### 3. Improve authentication and security
 
 Recommended changes:
 
-- replace current password hashing with `bcrypt` or `passlib`
+- keep username/password for the first live version
+- design the auth model so company email login can be added later without changing core user records
+- support company domain email identities such as `name@company.com`
+- make future SSO integration possible without a database redesign
+- keep role-based access control inside the app
+- use secure HTTP-only cookies or signed session tokens
 - add session timeout
-- force admin to change default password
-- remove hardcoded default admin password from production
-- add role checks in a cleaner centralized way
-- add login attempt protection if internet-facing
+- remove default admin password behavior from production
+- keep a proper audit trail for logins and critical admin actions
+
+Recommended auth model:
+
+- phase 1 identity comes from internal username/password
+- phase 2 identity can come from company email/password or company email-based login
+- phase 3 can move to SSO if needed
+- app authorization comes from internal roles such as `Admin`, `Manager`, `Employee`
+
+This lets you launch with the current company workflow while keeping the future path open.
 
 ### 4. Prepare the app for deployment
 
 You need:
 
-- a cloud host or VPS
-- a public domain or internal company URL
+- a cloud host for the frontend and backend
+- a company domain or internal subdomain
 - HTTPS/SSL
-- process/service management
+- centralized secrets/config management
 - database backups
-- error logging
+- logging and monitoring
+- employee-only access protection
 
-### 5. Decide whether to keep Streamlit or migrate
+## Deployment Recommendation
 
-You have two realistic paths:
+For your use case, my recommendation is:
 
-#### Option A: Keep Streamlit
+- Host the Next.js frontend on Render
+- Host the FastAPI backend on Render
+- Use Neon for PostgreSQL
+- Put Cloudflare Access in front of the application
 
-Best when:
+### Why this is my recommendation
 
-- the app is for internal company use
-- you want to go live quickly
-- UI complexity is moderate
+For a company-internal tool, the most important thing is not only deployment, but controlled access.
 
-Pros:
+Render is a strong fit because it officially supports both Next.js and FastAPI deployments and gives you straightforward environment variable management, Git-based deploys, and custom domains. Render also supports private services and internal networking for service-to-service communication.
 
-- fastest path
-- lowest rewrite effort
+Cloudflare Access is the extra security layer I recommend because it is designed specifically for protecting internal applications. It can sit in front of your app and require company identity verification before any employee reaches the app. It supports SSO, MFA, session policies, and employee-only access flows.
 
-Cons:
+### Why not rely only on Vercel protection
 
-- limited control compared with a full web framework
-- less ideal for larger enterprise workflows
+Based on current Vercel documentation, protecting production domains fully is more limited and tied to higher-tier protection features. For a company-internal business app, I would not choose that as the primary control layer.
 
-#### Option B: Rebuild using a web framework
+### Best practical setup
 
-Recommended stack:
+- Render = where the app runs
+- Neon = where the data lives
+- Cloudflare Access = who is allowed to open the app
+- Company SSO = how employees log in
 
-- Backend: FastAPI or Django
-- Frontend: React / Next.js
-- Database: PostgreSQL
+## Final Architecture Plan
 
-Best when:
+### Frontend
 
-- many employees will use it daily
-- you want approvals, reports, exports, notifications, leave workflow, or future HR modules
-- you want a more scalable long-term product
+- Next.js
+- role-aware UI
+- dashboard pages
+- project master pages
+- employee master pages
+- timesheet entry pages
+- admin reporting pages
 
-## Recommended Direction
+### Backend
 
-For your current project, the best path is:
+- FastAPI
+- REST API or hybrid REST-first architecture
+- authentication/session validation
+- RBAC authorization middleware
+- input validation with Pydantic
+- audit logging hooks
 
-1. Keep Streamlit for phase 1
-2. Replace SQLite with PostgreSQL
-3. Secure authentication properly
-4. Deploy internally first
-5. Later migrate to FastAPI/Django only if business needs grow
+### Database
 
-This saves time and gets the app live faster.
+- Neon PostgreSQL
+- normalized tables for users, employees, projects, timesheets, roles, sessions, auth identities, and audit logs
+- Alembic migrations
 
-## Step-by-Step Guide To Make It Live
+### Authentication
 
-## Phase 1: Clean up the current local app
+- phase 1: admin-created username/password accounts
+- phase 2: employee company email login
+- phase 3: optional Microsoft Entra ID or Google Workspace SSO
+- MFA-ready architecture
+- internal app role mapping
+- no default production password
 
-1. Keep the current app working locally.
-2. Add a `.env` file for configuration.
-3. Remove hardcoded production credentials.
-4. Add a `config.py` or similar settings file.
-5. Replace direct SQLite use with a database layer that can switch to PostgreSQL.
+### User Model Design Rule
 
-## Phase 2: Upgrade the database
+To support the future change cleanly, the new backend should separate:
 
-1. Create a PostgreSQL database.
-2. Create the same tables there: `users`, `employees`, `projects`, `timesheets`.
-3. Update the Python code to connect using a PostgreSQL driver such as `psycopg2` or `SQLAlchemy`.
-4. Migrate existing data from SQLite into PostgreSQL.
-5. Test login, project creation, employee creation, and timesheet entry with the new database.
+- `employee profile`
+- `login identity`
+- `authorization role`
 
-## Phase 3: Secure the app
+Recommended structure:
 
-1. Replace `sha256` password hashing with `bcrypt` or `passlib`.
-2. Force the initial admin password to be changed after first login.
-3. Remove any public/default password before deployment.
-4. Add secret keys through environment variables.
-5. Add proper validation and basic audit logging.
+- `employees` table = HR and employee profile data
+- `users` table = app user account
+- `auth_identities` table = login identifiers such as username, company email, or future SSO provider identity
 
-## Phase 4: Prepare deployment
+This is important because:
 
-1. Choose a host:
-   - Streamlit Community Cloud for demos only
-   - Render, Railway, Azure, AWS, or a company VPS for internal production use
-2. Set environment variables on the host.
-3. Deploy the app code.
-4. Connect it to PostgreSQL.
-5. Configure HTTPS and domain access.
-6. Restrict access if needed to office IP, company VPN, or employee login.
+- usernames may change
+- company emails may be introduced later
+- one employee may eventually have more than one login method
+- role management should stay independent from login method
 
-## Phase 5: Test with real users
+### Deployment
+
+- Render web service for Next.js
+- Render web service for FastAPI
+- Neon managed PostgreSQL
+- Cloudflare Access for employee-only protection
+
+## Step-by-Step Guide To Build The New Live Version
+
+This is now the recommended path, replacing the earlier Streamlit-first plan.
+
+## Phase 1: Freeze and study the current app
+
+1. Keep the current Streamlit app as the business logic reference.
+2. Extract and document the existing modules:
+   - users
+   - employees
+   - projects
+   - timesheets
+3. Identify all current fields, validations, and workflows.
+4. Treat the current app as the source of business rules, not as the future architecture.
+
+## Phase 2: Rebuild the backend properly with FastAPI
+
+1. Create a new backend app structure.
+2. Add environment-based configuration.
+3. Add SQLAlchemy models.
+4. Add Alembic migrations.
+5. Connect to Neon PostgreSQL.
+6. Create APIs for:
+   - auth/session
+   - employees
+   - projects
+   - timesheets
+   - admin reports
+7. Design the auth schema to support username now and company email later.
+8. Add role-based authorization checks.
+9. Add audit logging.
+
+## Phase 3: Build the frontend with Next.js
+
+1. Create the Next.js app.
+2. Add login flow using username/password first.
+3. Build these screens:
+    - login
+    - dashboard
+    - project master
+   - employee master
+   - timesheet entry
+   - admin timesheet view
+4. Connect the frontend to FastAPI.
+5. Add route protection and role-based UI behavior.
+
+## Phase 4: Add strong authentication
+
+1. Phase 1 live version:
+   - keep admin-created username/password login
+   - use strong password hashing such as `bcrypt` or `argon2`
+   - use secure session cookies
+2. Phase 2 upgrade:
+   - add company email as a login identity
+   - support email uniqueness per employee
+   - optionally add email verification for company domain accounts
+3. Phase 3 optional upgrade:
+   - integrate Microsoft Entra ID if the company uses Microsoft 365
+   - integrate Google Workspace if the company uses Google accounts
+   - enforce MFA through the provider
+4. Map authenticated users to internal app roles.
+5. Store only the minimum identity data needed in your app database.
+
+## Phase 5: Deploy for internal company use
+
+1. Deploy backend to Render.
+2. Deploy frontend to Render.
+3. Connect both to Neon PostgreSQL.
+4. Add the company domain.
+5. Put Cloudflare Access in front of the app.
+6. Configure employee-only access policy.
+7. Configure environment variables and secrets.
+
+## Phase 6: Test with real employees
 
 1. Test admin flow.
 2. Test employee flow.
-3. Test two or more employees logging entries at the same time.
-4. Test password change flow.
-5. Test backup and restore of the database.
+3. Test concurrent usage by multiple employees.
+4. Test current login flow and future email-login upgrade path.
+5. Test role restrictions.
+6. Test backup and restore of the database.
 
-## Phase 6: Add production features
+## Phase 7: Add production features
 
 Recommended next improvements:
 
@@ -201,17 +334,18 @@ Recommended next improvements:
 - dashboard charts
 - logs and monitoring
 
-## Fastest Way To Put This Online
+## Best Choice For Your Confirmed Requirements
 
-If you want the quickest live version with the least rewrite:
+Based on your decisions, this is the architecture I recommend we build:
 
-1. Keep Streamlit
-2. Move to PostgreSQL
-3. Add `.env` configuration
-4. Improve password security
-5. Deploy to Render, Railway, Azure, or a VPS
+1. Rewrite the app into `Next.js + FastAPI`
+2. Use `Neon PostgreSQL`
+3. Use `.env` and platform environment variables
+4. Launch with username/password, but design for company email login and later SSO
+5. Deploy frontend and backend on Render
+6. Protect access with Cloudflare Access
 
-That is the shortest practical route.
+This is the strongest and most future-ready path for a company-only internal system.
 
 ## Local Run Guide
 
@@ -230,31 +364,33 @@ Or run:
 .\run_timesheet.bat
 ```
 
-## Suggested Next Technical Tasks
+## Suggested Immediate Build Tasks
 
-If you want to convert this project properly, do these next:
+The next implementation steps should be:
 
-1. Add `.env` support
-2. Add PostgreSQL support
-3. Replace password hashing with `bcrypt`
-4. Remove hardcoded default admin password for production
-5. Add deployment files such as `Dockerfile` and `.gitignore`
-6. Add basic tests
+1. create the new backend folder with FastAPI
+2. create the new frontend folder with Next.js
+3. add environment-based config
+4. add Neon database connection
+5. design the new schema and migrations
+6. implement username/password auth with future email/SSO-ready identity structure
+7. migrate current business logic from the Streamlit app into API endpoints
 
 ## Summary
 
-This app is currently a local Streamlit + SQLite tool. It works as a prototype, but for live employee access the biggest required changes are:
+This app is currently a local Streamlit + SQLite tool. For the real live version, the confirmed target is:
 
-- move from SQLite to PostgreSQL
-- improve authentication/security
-- add environment-based configuration
-- deploy on a server with HTTPS
+- `Next.js + FastAPI`
+- `Neon PostgreSQL`
+- environment-based configuration
+- username/password first, company email login later, SSO-ready structure
+- Render deployment
+- Cloudflare Access for employee-only protection
 
-If you want, the next step I can take is to start Phase 1 for you by adding:
+If you want, the next step I can take is to start the actual migration by scaffolding the new production-ready structure inside this repo:
 
-- `.env` support
-- `.gitignore`
-- `config.py`
-- PostgreSQL-ready database connection structure
-
-That would make the project much closer to live deployment.
+- `frontend/` with Next.js
+- `backend/` with FastAPI
+- config/env support
+- Neon-ready database layer
+- auth and RBAC foundation
