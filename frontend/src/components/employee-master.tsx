@@ -187,6 +187,11 @@ export function EmployeeMaster() {
   async function loadEmployees() {
     dispatch({ type: "LOAD_START" });
     try {
+      const currentUser = await apiRequest<{ must_change_password: boolean }>("/auth/me");
+      if (currentUser.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
       const result = await apiRequest<Employee[]>("/employees");
       dispatch({ type: "LOAD_SUCCESS", employees: result });
     } catch (requestError) {

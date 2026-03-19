@@ -35,7 +35,7 @@ export function LoginPanel() {
         token: null,
       });
       setAccessToken(result.access_token);
-      router.push("/dashboard");
+      router.push(result.must_change_password ? "/change-password" : "/dashboard");
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : "Unable to log in",

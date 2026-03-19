@@ -225,6 +225,10 @@ export function TimesheetModule() {
     dispatch({ type: "LOAD_START" });
     try {
       const currentUser = await fetchCurrentUser();
+      if (currentUser.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
       const projectsResult = await apiRequest<Project[]>("/projects");
 
       let myResult: MyTimesheet[] = [];

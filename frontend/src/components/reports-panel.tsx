@@ -108,6 +108,10 @@ export function ReportsPanel() {
     dispatch({ type: "LOAD_START" });
     try {
       const currentUser = await fetchCurrentUser();
+      if (currentUser.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
       if (currentUser.role !== "Admin") {
         dispatch({ type: "ACCESS_DENIED", user: currentUser });
         return;

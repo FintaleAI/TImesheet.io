@@ -185,6 +185,11 @@ export function ProjectMaster() {
   async function loadProjects() {
     dispatch({ type: "LOAD_START" });
     try {
+      const currentUser = await apiRequest<{ must_change_password: boolean }>("/auth/me");
+      if (currentUser.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
       const result = await apiRequest<Project[]>("/projects");
       dispatch({ type: "LOAD_SUCCESS", projects: result });
     } catch (requestError) {

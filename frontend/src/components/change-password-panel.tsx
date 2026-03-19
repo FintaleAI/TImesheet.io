@@ -36,6 +36,9 @@ export function ChangePasswordPanel() {
       });
       setSuccess(result.message);
       setForm(initialForm);
+      window.setTimeout(() => {
+        router.push("/dashboard");
+      }, 900);
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : "Unable to change password",

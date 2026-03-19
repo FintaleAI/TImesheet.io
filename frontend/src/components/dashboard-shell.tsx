@@ -74,6 +74,10 @@ export function DashboardShell() {
     fetchCurrentUser()
       .then((payload) => {
         if (mounted) {
+          if (payload.must_change_password) {
+            router.replace("/change-password");
+            return;
+          }
           setUser(payload);
         }
       })
