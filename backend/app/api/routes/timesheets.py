@@ -28,6 +28,14 @@ from app.services.timesheets import (
 router = APIRouter()
 
 
+def _validate_date_range(date_from: date | None, date_to: date | None) -> None:
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from cannot be later than date_to",
+        )
+
+
 @router.post("", response_model=TimesheetCreateResponse, status_code=status.HTTP_201_CREATED)
 def post_timesheet(
     payload: TimesheetCreateRequest,
@@ -123,6 +131,7 @@ def get_all_timesheets(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> list[AdminTimesheetItem]:
+    _validate_date_range(date_from, date_to)
     rows = list_all_timesheets(db, date_from=date_from, date_to=date_to)
     return [
         AdminTimesheetItem(
@@ -148,6 +157,7 @@ def export_timesheets_csv(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> Response:
+    _validate_date_range(date_from, date_to)
     rows = list_all_timesheets(db, date_from=date_from, date_to=date_to)
     buffer = StringIO()
     writer = csv.writer(buffer)

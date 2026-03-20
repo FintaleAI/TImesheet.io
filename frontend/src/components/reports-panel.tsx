@@ -3,8 +3,9 @@
 import { useEffect, useReducer } from "react";
 import { useRouter } from "next/navigation";
 
+import { appConfig } from "@/lib/config";
 import { apiRequest } from "@/lib/api";
-import { clearAccessToken } from "@/lib/auth";
+import { clearAccessToken, getAccessToken } from "@/lib/auth";
 import { fetchCurrentUser, type CurrentUser } from "@/lib/session";
 
 type Summary = {
@@ -51,6 +52,7 @@ type State = {
   projectRows: ByProject[];
   filters: FilterState;
   loading: boolean;
+  exporting: boolean;
   error: string | null;
 };
 
@@ -65,12 +67,22 @@ type Action =
     }
   | { type: "LOAD_ERROR"; error: string }
   | { type: "ACCESS_DENIED"; user: CurrentUser }
-  | { type: "UPDATE_FILTER"; key: keyof FilterState; value: string };
+  | { type: "UPDATE_FILTER"; key: keyof FilterState; value: string }
+  | { type: "EXPORT_START" }
+  | { type: "EXPORT_DONE" }
+  | { type: "EXPORT_ERROR"; error: string };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "LOAD_START":
-      return { ...state, loading: true, error: null };
+      return {
+        ...state,
+        loading: true,
+        error: null,
+        summary: null,
+        employeeRows: [],
+        projectRows: [],
+      };
     case "LOAD_SUCCESS":
       return {
         ...state,
@@ -81,11 +93,32 @@ function reducer(state: State, action: Action): State {
         projectRows: action.projectRows,
       };
     case "LOAD_ERROR":
-      return { ...state, loading: false, error: action.error };
+      return {
+        ...state,
+        loading: false,
+        error: action.error,
+        summary: null,
+        employeeRows: [],
+        projectRows: [],
+      };
     case "ACCESS_DENIED":
-      return { ...state, loading: false, user: action.user, error: "Reports are available only for admin users." };
+      return {
+        ...state,
+        loading: false,
+        user: action.user,
+        error: "Reports are available only for admin users.",
+        summary: null,
+        employeeRows: [],
+        projectRows: [],
+      };
     case "UPDATE_FILTER":
       return { ...state, filters: { ...state.filters, [action.key]: action.value } };
+    case "EXPORT_START":
+      return { ...state, exporting: true, error: null };
+    case "EXPORT_DONE":
+      return { ...state, exporting: false };
+    case "EXPORT_ERROR":
+      return { ...state, exporting: false, error: action.error };
   }
 }
 
@@ -96,15 +129,44 @@ const initialState: State = {
   projectRows: [],
   filters: initialFilters,
   loading: true,
+  exporting: false,
   error: null,
 };
+
+function buildQueryString(filters: FilterState) {
+  const params = new URLSearchParams();
+  if (filters.date_from) params.set("date_from", filters.date_from);
+  if (filters.date_to) params.set("date_to", filters.date_to);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function validateFilters(filters: FilterState): string | null {
+  if (filters.date_from && filters.date_to && filters.date_from > filters.date_to) {
+    return "From date cannot be later than To date.";
+  }
+  return null;
+}
+
+function getExportFilename(filters: FilterState) {
+  if (filters.date_from || filters.date_to) {
+    return `timesheets_${filters.date_from || "start"}_${filters.date_to || "end"}.csv`;
+  }
+  return "timesheets.csv";
+}
 
 export function ReportsPanel() {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { user, summary, employeeRows, projectRows, filters, loading, error } = state;
+  const { user, summary, employeeRows, projectRows, filters, loading, exporting, error } = state;
 
   async function loadReports(activeFilters: FilterState) {
+    const validationError = validateFilters(activeFilters);
+    if (validationError) {
+      dispatch({ type: "LOAD_ERROR", error: validationError });
+      return;
+    }
+
     dispatch({ type: "LOAD_START" });
     try {
       const currentUser = await fetchCurrentUser();
@@ -117,10 +179,7 @@ export function ReportsPanel() {
         return;
       }
 
-      const params = new URLSearchParams();
-      if (activeFilters.date_from) params.set("date_from", activeFilters.date_from);
-      if (activeFilters.date_to) params.set("date_to", activeFilters.date_to);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const suffix = buildQueryString(activeFilters);
 
       const [summaryResult, employeesResult, projectsResult] = await Promise.all([
         apiRequest<Summary>(`/reports/timesheets/summary${suffix}`),
@@ -157,6 +216,57 @@ export function ReportsPanel() {
   async function onSubmit(event: { preventDefault(): void }) {
     event.preventDefault();
     await loadReports(filters);
+  }
+
+  async function onExport() {
+    const validationError = validateFilters(filters);
+    if (validationError) {
+      dispatch({ type: "EXPORT_ERROR", error: validationError });
+      return;
+    }
+
+    dispatch({ type: "EXPORT_START" });
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        throw new Error("Missing credentials");
+      }
+
+      const response = await fetch(
+        `${appConfig.apiBaseUrl}/timesheets/export${buildQueryString(filters)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { detail?: string }
+          | null;
+        throw new Error(payload?.detail ?? "Unable to export report");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = getExportFilename(filters);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+      dispatch({ type: "EXPORT_DONE" });
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Unable to export report";
+      dispatch({ type: "EXPORT_ERROR", error: message });
+      if (message.toLowerCase().includes("credentials")) {
+        clearAccessToken();
+        router.push("/");
+      }
+    }
   }
 
   return (
@@ -199,9 +309,19 @@ export function ReportsPanel() {
               onChange={(event) => updateFilter("date_to", event.target.value)}
             />
           </div>
-          <button className="button-primary" type="submit" disabled={loading}>
-            {loading ? "Refreshing..." : "Apply filters"}
-          </button>
+          <div className="form-actions">
+            <button className="button-primary" type="submit" disabled={loading}>
+              {loading ? "Refreshing..." : "Apply filters"}
+            </button>
+            <button
+              className="button-secondary"
+              type="button"
+              onClick={() => void onExport()}
+              disabled={loading || exporting}
+            >
+              {exporting ? "Preparing CSV..." : "Download CSV"}
+            </button>
+          </div>
         </form>
 
         {error ? <p className="error-text">{error}</p> : null}
