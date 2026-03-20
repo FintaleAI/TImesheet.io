@@ -7,12 +7,14 @@ import { useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { setAccessToken } from "@/lib/auth";
 
+
 type LoginResponse = {
   access_token: string;
   must_change_password: boolean;
   role: string | null;
   user_id: number;
 };
+
 
 export function LoginPanel() {
   const router = useRouter();
@@ -21,6 +23,7 @@ export function LoginPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  
   async function onSubmit(event: { preventDefault(): void }) {
     event.preventDefault();
     setLoading(true);

@@ -5,6 +5,7 @@ import type { Route } from "next";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+
 import { clearAccessToken } from "@/lib/auth";
 import { fetchCurrentUser, type CurrentUser } from "@/lib/session";
 
@@ -13,6 +14,7 @@ type DashboardModule = {
   description: string;
   href: Route;
 };
+
 
 function getModules(role: string | null): DashboardModule[] {
   if (role === "Admin") {
@@ -45,6 +47,7 @@ function getModules(role: string | null): DashboardModule[] {
     ];
   }
 
+  
   return [
     {
       title: "Timesheets",

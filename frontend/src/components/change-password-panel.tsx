@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import { apiRequest } from "@/lib/api";
 
 type PasswordPayload = {
