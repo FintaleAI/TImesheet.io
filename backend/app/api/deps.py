@@ -34,4 +34,3 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
-# Add this comment to the end of the file to indicate that the file has been fully processed.
