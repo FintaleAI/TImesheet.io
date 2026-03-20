@@ -43,6 +43,26 @@ Recommended value:
 
 - `https://your-backend.onrender.com/api/v1`
 
+## Local vs Live Config
+
+Use separate values for local development and Render production.
+
+### Local development
+
+- [backend/.env](/c:/Users/finta/OneDrive/Desktop/Fintale-Tools/Timesheet/backend/.env)
+  - `CORS_ORIGINS=http://localhost:3000,https://your-frontend.onrender.com`
+- [frontend/.env.local](/c:/Users/finta/OneDrive/Desktop/Fintale-Tools/Timesheet/frontend/.env.local)
+  - `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`
+
+### Render production
+
+- Backend Render env var:
+  - `CORS_ORIGINS=https://your-frontend.onrender.com,https://timesheet.yourcompany.com`
+- Frontend Render env var:
+  - `NEXT_PUBLIC_API_BASE_URL=https://your-backend.onrender.com/api/v1`
+
+You should not point local frontend development to the live backend unless that is intentional for a specific test.
+
 ## 3. Render Deployment
 
 This repo includes [render.yaml](/c:/Users/finta/OneDrive/Desktop/Fintale-Tools/Timesheet/render.yaml) so you can use a Render Blueprint deployment.

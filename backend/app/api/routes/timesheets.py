@@ -1,8 +1,10 @@
 import csv
 from datetime import date
-from io import StringIO
+from io import BytesIO, StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -34,6 +36,61 @@ def _validate_date_range(date_from: date | None, date_to: date | None) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="date_from cannot be later than date_to",
         )
+
+
+def _build_timesheet_workbook(
+    rows: list,
+    *,
+    include_employee: bool,
+    title: str,
+) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = title
+
+    headers = ["Date"]
+    if include_employee:
+        headers.extend(["Employee Code", "Employee Name"])
+    headers.extend(["Project Code", "Project Name", "Hours", "Overtime", "Remarks"])
+    sheet.append(headers)
+
+    header_fill = PatternFill(fill_type="solid", fgColor="C97A05")
+    header_font = Font(color="FFFFFF", bold=True)
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for row in rows:
+        values = [row.work_date.isoformat()]
+        if include_employee:
+            values.extend(
+                [
+                    row.employee.employee_code if row.employee else "",
+                    row.employee.full_name if row.employee else "",
+                ]
+            )
+        values.extend(
+            [
+                row.project.project_code,
+                row.project.project_name,
+                float(row.hours),
+                "Yes" if row.overtime else "No",
+                row.remarks or "",
+            ]
+        )
+        sheet.append(values)
+
+    for column in sheet.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            cell_value = "" if cell.value is None else str(cell.value)
+            max_length = max(max_length, len(cell_value))
+        sheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 40)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 @router.post("", response_model=TimesheetCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -124,6 +181,20 @@ def get_my_timesheets(
     ]
 
 
+@router.get("/me/export.xlsx")
+def export_my_timesheets_excel(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    rows = list_my_timesheets(db, current_user.id)
+    content = _build_timesheet_workbook(rows, include_employee=False, title="My Timesheets")
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="my_timesheets.xlsx"'},
+    )
+
+
 @router.get("", response_model=list[AdminTimesheetItem])
 def get_all_timesheets(
     date_from: date | None = Query(default=None),
@@ -197,5 +268,28 @@ def export_timesheets_csv(
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export.xlsx")
+def export_timesheets_excel(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> Response:
+    _validate_date_range(date_from, date_to)
+    rows = list_all_timesheets(db, date_from=date_from, date_to=date_to)
+    content = _build_timesheet_workbook(rows, include_employee=True, title="All Timesheets")
+    filename = "timesheets.xlsx"
+    if date_from or date_to:
+        filename = (
+            f"timesheets_{date_from.isoformat() if date_from else 'start'}"
+            f"_{date_to.isoformat() if date_to else 'end'}.xlsx"
+        )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

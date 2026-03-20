@@ -150,9 +150,9 @@ function validateFilters(filters: FilterState): string | null {
 
 function getExportFilename(filters: FilterState) {
   if (filters.date_from || filters.date_to) {
-    return `timesheets_${filters.date_from || "start"}_${filters.date_to || "end"}.csv`;
+    return `timesheets_${filters.date_from || "start"}_${filters.date_to || "end"}.xlsx`;
   }
-  return "timesheets.csv";
+  return "timesheets.xlsx";
 }
 
 export function ReportsPanel() {
@@ -233,7 +233,7 @@ export function ReportsPanel() {
       }
 
       const response = await fetch(
-        `${appConfig.apiBaseUrl}/timesheets/export${buildQueryString(filters)}`,
+        `${appConfig.apiBaseUrl}/timesheets/export.xlsx${buildQueryString(filters)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -319,7 +319,7 @@ export function ReportsPanel() {
               onClick={() => void onExport()}
               disabled={loading || exporting}
             >
-              {exporting ? "Preparing CSV..." : "Download CSV"}
+              {exporting ? "Preparing Excel..." : "Download Excel"}
             </button>
           </div>
         </form>

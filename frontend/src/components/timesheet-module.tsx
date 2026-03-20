@@ -3,8 +3,9 @@
 import { useEffect, useReducer } from "react";
 import { useRouter } from "next/navigation";
 
+import { appConfig } from "@/lib/config";
 import { apiRequest } from "@/lib/api";
-import { clearAccessToken } from "@/lib/auth";
+import { clearAccessToken, getAccessToken } from "@/lib/auth";
 import { fetchCurrentUser, type CurrentUser } from "@/lib/session";
 
 type Project = {
@@ -62,6 +63,7 @@ type State = {
   success: string | null;
   loading: boolean;
   submitting: boolean;
+  exporting: boolean;
   deletingTimesheetId: number | null;
 };
 
@@ -86,6 +88,9 @@ type Action =
   | { type: "UPDATE_FIELD"; key: keyof TimesheetForm; value: string }
   | { type: "START_EDIT"; entry: MyTimesheet | AdminTimesheet }
   | { type: "CANCEL_EDIT" }
+  | { type: "EXPORT_START" }
+  | { type: "EXPORT_DONE"; message: string }
+  | { type: "EXPORT_ERROR"; error: string }
   | { type: "DELETE_START"; timesheetId: number }
   | {
       type: "DELETE_DONE";
@@ -147,6 +152,12 @@ function reducer(state: State, action: Action): State {
         error: null,
         success: null,
       };
+    case "EXPORT_START":
+      return { ...state, exporting: true, error: null, success: null };
+    case "EXPORT_DONE":
+      return { ...state, exporting: false, success: action.message };
+    case "EXPORT_ERROR":
+      return { ...state, exporting: false, error: action.error };
     case "DELETE_START":
       return {
         ...state,
@@ -188,6 +199,7 @@ const initialState: State = {
   success: null,
   loading: true,
   submitting: false,
+  exporting: false,
   deletingTimesheetId: null,
 };
 
@@ -204,6 +216,14 @@ function buildTimesheetPayload(form: TimesheetForm) {
   };
 }
 
+function getTimesheetExportPath(user: CurrentUser | null) {
+  return isAdmin(user) ? "/timesheets/export.xlsx" : "/timesheets/me/export.xlsx";
+}
+
+function getTimesheetExportFilename(user: CurrentUser | null) {
+  return isAdmin(user) ? "timesheets.xlsx" : "my_timesheets.xlsx";
+}
+
 export function TimesheetModule() {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -218,6 +238,7 @@ export function TimesheetModule() {
     success,
     loading,
     submitting,
+    exporting,
     deletingTimesheetId,
   } = state;
 
@@ -350,6 +371,54 @@ export function TimesheetModule() {
     dispatch({ type: "UPDATE_FIELD", key, value });
   }
 
+  async function onExport() {
+    dispatch({ type: "EXPORT_START" });
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        throw new Error("Missing credentials");
+      }
+
+      const response = await fetch(`${appConfig.apiBaseUrl}${getTimesheetExportPath(user)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { detail?: string }
+          | null;
+        throw new Error(payload?.detail ?? "Unable to export timesheets");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = getTimesheetExportFilename(user);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      dispatch({
+        type: "EXPORT_DONE",
+        message: isAdmin(user)
+          ? "All timesheets exported successfully."
+          : "Your timesheet records exported successfully.",
+      });
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Unable to export timesheets";
+      dispatch({ type: "EXPORT_ERROR", error: message });
+      if (message.toLowerCase().includes("credentials")) {
+        clearAccessToken();
+        router.push("/");
+      }
+    }
+  }
+
   return (
     <main className="shell">
       <section className="panel hero">
@@ -364,6 +433,21 @@ export function TimesheetModule() {
           </div>
           <button className="button-primary" type="button" onClick={() => router.push("/dashboard")}>
             Back to dashboard
+          </button>
+        </div>
+
+        <div className="form-actions">
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={() => void onExport()}
+            disabled={loading || exporting}
+          >
+            {exporting
+              ? "Preparing Excel..."
+              : isAdmin(user)
+                ? "Download All Timesheets"
+                : "Download My Timesheets"}
           </button>
         </div>
 
